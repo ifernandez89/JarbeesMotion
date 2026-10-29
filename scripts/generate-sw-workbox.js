@@ -8,23 +8,24 @@ async function build() {
     swDest,
     globDirectory: path.join(process.cwd(), 'public'),
     globPatterns: ['**/*.{html,js,css,png,svg,ico,json}'],
+    globIgnores: ['**/sw*.js', '**/sw*.js.map'],
     maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
     runtimeCaching: [
       {
         urlPattern: /\/api\//,
         handler: 'NetworkFirst',
         options: {
-          cacheName: 'jarbees-api-cache-v1',
+          cacheName: 'jarbees-motion-api-v2',
           expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 },
           networkTimeoutSeconds: 5,
         },
       },
       {
         urlPattern: /\.(?:png|jpg|jpeg|svg|webp|ico)$/,
-        handler: 'CacheFirst',
+        handler: 'StaleWhileRevalidate',
         options: {
-          cacheName: 'jarbees-image-cache-v1',
-          expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 },
+          cacheName: 'jarbees-motion-images-v2',
+          expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
         },
       },
     ],

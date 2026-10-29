@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "generate-icons": "node scripts/generate-motion-icons.js",
+    "prebuild": "node scripts/generate-motion-icons.js && node scripts/generate-sw-workbox.js",
     "build": "next build",
     "generate-workbox-sw": "node scripts/generate-sw-workbox.js",
     "analyze": "cross-env ANALYZE=true next build",

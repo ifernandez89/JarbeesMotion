@@ -1,8 +1,7 @@
 "use client";
 
-import JarBeesMobileApp from "@/components/jarbees-mobile/JarBeesMobileApp";
+import MotionPage from "./motion/page";
 
 export default function HomePage() {
-  return <JarBeesMobileApp />;
+  return <MotionPage />;
 }
-
