@@ -1,5 +1,28 @@
 # JarBees Motion — plan del Windows Motion Bridge
 
+## Resumen ejecutivo
+
+**Estado:** base parcial; el plan está listo para convertirse en una
+especificación de implementación, siempre que la Fase 0 confirme primero la
+conectividad segura real.
+
+**Tres incorporaciones prioritarias:**
+1. **Contrato de protocolo versionado** con tipos de mensajes y límites
+   explícitos.
+2. **Parada segura garantizada**, incluida la liberación de teclas y botones
+   ante desconexiones.
+3. **Pruebas de latencia y usabilidad**, antes de ampliar el alcance a sensores
+   y Auren.
+
+**Decisión técnica:** mantener C#/.NET como candidato principal para el Bridge
+distribuible, con una prueba mínima de SendInput antes de comprometerse
+definitivamente con esa elección.
+
+**No empezar todavía con:** smartwatch ni manipulación 3D avanzada. Primero
+conseguir que el Moto mueva el cursor de Windows de forma fiable; ese logro ya
+sería una primera herramienta útil de JarBees y una base técnica reutilizable
+para lo que viene después.
+
 ## Evaluación de preparación
 
 **Conclusión: base parcial; aún no estamos listos para controlar Windows.**
@@ -63,47 +86,181 @@ exponer el Bridge a Internet para este flujo local.
 
 ## Riesgos y requisitos previos
 
-1. **HTTPS/WSS:** la PWA publicada se sirve por HTTPS. Una conexión `ws://` a
-   una IP de la LAN puede quedar bloqueada como contenido mixto. La solución
-   debe usar WSS con certificado confiable por el teléfono o una estrategia de
-   origen seguro local compatible con los navegadores objetivo. Verificarlo en
-   el Moto G(7) Plus real; no dar por hecho que compartir Wi-Fi resuelve esta
-   política.
-2. **Red local:** probar permisos de acceso a dispositivos de la red local,
-   firewall de Windows, redes de invitados, aislamiento de clientes y cambios
-   de IP. Informar al usuario si no hay conectividad.
-3. **Autorización:** mostrar un código de emparejamiento de corta duración,
-   limitar intentos y exigir aprobación local en Windows. Validar `Origin`,
-   autenticar la sesión y no incluir secretos en URL, logs o repositorio.
-4. **Control seguro:** permitir solo mensajes versionados de mouse/teclado;
-   validar tipos y rangos, limitar frecuencia y tamaño, cerrar sesiones
-   inválidas y detener botones/teclas mantenidos al desconectar o expirar la
-   sesión.
-5. **Consentimiento y control:** mostrar en Windows cuándo hay una sesión
-   activa y ofrecer una desconexión inmediata. No iniciar automáticamente el
-   Bridge con Windows en el primer prototipo.
-6. **Límites de Windows:** `SendInput` no evita UAC ni controla de forma
-   fiable escritorios seguros o pantallas de inicio de sesión; documentar
-   esos límites.
+### 1. HTTPS/WSS — Resolver antes de construir la UI
+
+**Este es el punto crítico del proyecto.** La PWA publicada en GitHub Pages se
+ejecuta bajo HTTPS. El Bridge estará en tu PC y tendrá que ofrecer un canal de
+comunicación seguro que el navegador de Android acepte.
+
+**No asumir que:**
+- Un certificado autofirmado va a funcionar sin intervención manual.
+- Usar la IP local resuelve automáticamente el problema de contenido mixto.
+- Todos los navegadores permiten el mismo acceso a la red local.
+
+**Matriz de pruebas obligatoria en Fase 0:**
+- PWA publicada en GitHub Pages → Bridge en Windows.
+- Moto G(7) Plus → conexión por la IP local de la PC.
+- Certificado, autenticación y permisos de red local.
+- Rechazo claro si el navegador bloquea la conexión.
+
+**Criterio de salida:** conexión autenticada y bidireccional comprobada desde el
+teléfono real, no solo desde localhost o desde las herramientas de desarrollo.
+
+**Si WSS local resulta demasiado engorroso,** evaluar alternativas antes de
+invertir tiempo en la interfaz: un pequeño cliente Android nativo o una
+aplicación local que sirva también la interfaz desde el propio equipo. No
+cambiar de solución sin medir primero la viabilidad.
+
+### 2. Red local y conectividad real
+
+Probar permisos de acceso a dispositivos de la red local, firewall de Windows,
+redes de invitados, aislamiento de clientes y cambios de IP. Informar al
+usuario si no hay conectividad. Mismo Wi-Fi no garantiza conectividad.
+
+### 3. Autorización y emparejamiento
+
+Mostrar un código de emparejamiento de corta duración, limitar intentos y
+exigir aprobación local en Windows. Validar `Origin`, autenticar la sesión y no
+incluir secretos en URL, logs o repositorio.
+
+### 4. Control seguro — Contrato de protocolo explícito
+
+Definir qué mensajes puede enviar la PWA y cuáles acepta Windows **antes** de
+implementar el Bridge. Esto evita que el proyecto termine dependiendo de
+formatos improvisados.
+
+**Estructura de mensaje:**
+- Incluir versión del protocolo en todos los mensajes.
+- Validaciones estrictas de tipo, rango y frecuencia.
+- Separar eventos de estado de eventos de movimiento.
+
+**Tipos de mensaje (referencia conceptual):**
+
+| Mensaje | Función | Validación |
+|---------|---------|------------|
+| `mouse.move` | Desplazar cursor | Límites de desplazamiento por mensaje |
+| `mouse.button` | Presionar o soltar un botón | Botones permitidos y estado coherente |
+| `mouse.scroll` | Desplazamiento de rueda | Límites de intensidad |
+| `keyboard.text` | Escribir texto | Longitud máxima y caracteres válidos |
+| `keyboard.key` | Presionar o liberar una tecla | Lista permitida y liberación segura |
+| `session.stop` | Finalizar control | Detener entradas inmediatamente |
+| `ping` / `pong` | Comprobar conexión | Tiempo máximo sin respuesta |
+
+**Reglas de protocolo:**
+- Los movimientos pueden agruparse o descartarse si llegan demasiado rápido.
+- Las pulsaciones y liberaciones de teclas **no deben perderse silenciosamente**.
+- Mensajes fuera de orden, malformados o excesivamente frecuentes deben
+  rechazarse.
+
+### 5. Seguridad frente a entradas atascadas — Condición central
+
+**Si se pierde la conexión, se liberan todas las teclas y botones que el Bridge
+haya presionado.**
+
+Requisitos obligatorios:
+- Si vence la sesión, se detiene la inyección de entradas.
+- Una segunda conexión no puede tomar el control mientras existe otra sesión
+  autorizada.
+- El botón de parada debe actuar localmente en Windows, aunque el teléfono haya
+  perdido conexión.
+- El Bridge debe rechazar mensajes fuera de orden, malformados o excesivamente
+  frecuentes.
+
+**Para el primer prototipo:** limitar la sesión a un único teléfono emparejado
+y un único cliente controlador. No necesitamos multiusuario todavía.
+
+### 6. Consentimiento y control
+
+Mostrar en Windows cuándo hay una sesión activa y ofrecer una desconexión
+inmediata. No iniciar automáticamente el Bridge con Windows en el primer
+prototipo.
+
+### 7. Límites de Windows
+
+`SendInput` no evita UAC ni controla de forma fiable escritorios seguros o
+pantallas de inicio de sesión; documentar esos límites.
 
 ## Plan por fases
 
-### Fase 0 — Prueba de viabilidad y contrato
+### Fase 0 — Viabilidad técnica (HTTPS/WSS + SendInput)
 
-- Probar, en un Windows y en el Moto real, la conexión PWA HTTPS a un Bridge
-  WSS local con certificado confiable y permisos de red local.
-- Comparar una llamada mínima a `SendInput` en C# con la alternativa de Node y
-  elegir el runtime del Bridge a partir de compatibilidad y distribución.
-- Definir versión de protocolo, emparejamiento, caducidad de sesión,
-  desconexión y límites. No implementar el envío de eventos antes de cerrar
-  estas decisiones.
+**Objetivo:** confirmar que la arquitectura propuesta es técnicamente viable
+antes de construir cualquier interfaz.
 
-**Salida:** decisión documentada sobre runtime y TLS/WSS, más una prueba
-reproducible de conexión desde el teléfono. Si el navegador no puede establecer
-el canal seguro local, resolver ese bloqueo antes de avanzar con UI.
+**Tareas obligatorias:**
 
-### Fase 1 — Mouse táctil
+1. **Prueba mínima de `SendInput`** en Windows:
+   - C#/.NET con P/Invoke a Win32.
+   - Comparar con alternativa de Node.js (requiere dependencia nativa).
+   - Elegir runtime del Bridge basándose en compatibilidad y distribución.
 
+2. **Prueba de conectividad HTTPS/WSS real:**
+   - PWA publicada en GitHub Pages (HTTPS).
+   - Bridge WSS en Windows (IP local de la PC).
+   - Moto G(7) Plus conectado por Wi-Fi.
+   - Certificado que el navegador acepte (autofirmado + instalación manual, o
+     mDNS + `.local`, o certificado válido).
+
+3. **Definir contrato de protocolo:**
+   - Versión de protocolo.
+   - Tipos de mensaje con validaciones explícitas (ver sección Riesgos #4).
+   - Límites de frecuencia, tamaño y secuencia.
+   - Emparejamiento, caducidad de sesión y desconexión.
+   - Liberación segura de teclas/botones.
+
+**Criterio de salida:**
+- Conexión autenticada y bidireccional comprobada desde el teléfono real (no
+  desde localhost ni dev tools).
+- Decisión documentada sobre runtime y estrategia TLS/WSS.
+- Contrato de protocolo escrito y validado conceptualmente.
+
+**Si el navegador no puede establecer el canal seguro local:** resolver ese
+bloqueo antes de avanzar con UI. Considerar alternativas (app Android nativa,
+servidor local que también sirva la interfaz).
+
+### Fase 0.5 — Usabilidad y rendimiento del mouse básico
+
+**Objetivo:** medir el rendimiento real antes de incorporar sensores avanzados.
+
+**Decisiones de diseño del trackpad:**
+- ¿Movimiento relativo (trackpad) o absoluto (lápiz)?
+  - **Recomendado:** trackpad relativo, el dedo no necesita recorrer toda la
+    pantalla para desplazar el cursor de extremo a extremo.
+- ¿Qué ocurre si levantás el dedo y volvés a apoyarlo?
+- ¿Cómo se diferencia un toque de un arrastre?
+- ¿Se puede mantener presionado el botón mientras se arrastra?
+- ¿Hay zona muerta o aceleración configurable?
+
+**La PWA debe enviar deltas de movimiento; el Bridge los traduce a
+desplazamientos de Windows.**
+
+**Pruebas de rendimiento obligatorias:**
+
+1. **Latencia de extremo a extremo:**
+   - Medir el tiempo entre una acción en el teléfono y la ejecución del evento
+     en Windows.
+   - Registrar mediana y percentil 95, no solamente el mejor resultado.
+
+2. **Estabilidad durante el uso:**
+   - Mantener el mouse en funcionamiento durante varios minutos.
+   - Comprobar pérdidas de conexión, movimientos erráticos y bloqueos de la UI.
+
+3. **Recuperación de conexión:**
+   - Desactivar y reactivar el Wi-Fi.
+   - Cerrar la PWA y reiniciar el Bridge.
+   - La recuperación debe ser clara y exigir una nueva autorización cuando
+     corresponda.
+
+**No fijar todavía un umbral de latencia como requisito definitivo:** primero
+medir el comportamiento real de tu red y del Moto G(7) Plus. Después
+establecer objetivos razonables.
+
+**Criterio de salida:** mouse táctil usable para tareas reales durante sesiones
+de varios minutos, con latencia medida y documentada.
+
+### Fase 1 — Implementación del mouse táctil
+
+**Tareas:**
 - Añadir una pantalla de control móvil separada del asistente actual.
 - Traducir desplazamientos relativos del dedo en deltas de cursor; incluir
   clic izquierdo/derecho, estado de conexión, emparejamiento y desconexión.
@@ -116,11 +273,16 @@ acciones; se puede detener el control inmediatamente desde ambos dispositivos.
 
 ### Fase 2 — Teclado
 
-- Añadir entrada de texto y teclas especiales necesarias (Escape, Enter,
-  Tab, modificadores y flechas).
+**Tareas:**
+- Añadir entrada de texto y teclas especiales necesarias.
+- Empezar por: texto, Enter, Escape, Tab, flechas y modificadores.
+- Después agregar combinaciones avanzadas.
 - Definir reglas para teclas mantenidas, repetición, foco y liberación segura
   ante pérdida de conexión.
 - No incluir combinaciones destructivas o envío de comandos arbitrarios.
+
+**Importante:** distinguir el envío de caracteres del envío de teclas físicas,
+porque no se comportan igual con todos los idiomas y distribuciones de teclado.
 
 **Aceptación:** texto y teclas permitidas llegan al equipo correcto, con
 confirmación visible de conexión y liberación segura tras desconexión.
@@ -149,6 +311,43 @@ Bridge sin configuraciones manuales peligrosas ni exposición a Internet.
 Evaluar hardware, permisos y transporte tras validar el control por sensores en
 el teléfono. No forma parte del primer prototipo.
 
+## Consideración arquitectónica: separar transporte de controlador
+
+**Este refinamiento aporta el mayor valor a futuro.**
+
+En lugar de desarrollar un sistema exclusivo para el mouse y otro distinto para
+Auren, considerar tres capas:
+
+```text
+┌─────────────────────────────────────┐
+│   Fuentes de entrada                │
+│   Touch · Giroscopio · Smartwatch   │
+│   · Futuros sensores                │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│   Motion Input API                  │
+│   Movimiento relativo · Orientación │
+│   · Botones · Acciones              │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│   Adaptadores de destino            │
+│   Mouse Windows · Teclado           │
+│   · Abeja 3D · Auren Flight         │
+│   Controller                        │
+└─────────────────────────────────────┘
+```
+
+**Beneficio:** cuando incorpores el reloj, no tendrás que rehacer el Bridge ni
+el sistema de movimiento. Y cuando quieras controlar a Auren, podrás reutilizar
+la orientación, la calibración y la conexión, pero con un adaptador diferente
+para su física de vuelo.
+
+**No implementar esta separación inmediatamente:** primero validar el mouse
+básico. Pero tener presente este diseño al estructurar el código del Bridge y
+de la PWA.
+
 ## Limpieza y límites de alcance
 
 En esta actualización se reorientan los README y el plan, se corrigen las rutas
@@ -161,13 +360,30 @@ producto y verificar referencias, rutas de despliegue y consumidores.
 
 ## Verificación pendiente
 
+### Pre-implementación (Fase 0)
+- **Prueba de conectividad real HTTPS/WSS** entre GitHub Pages y Bridge Windows,
+  ejecutada en el Moto G(7) Plus real.
+- **Prueba mínima de `SendInput`** en C# y evaluación de alternativas.
+- **Contrato de protocolo escrito** con versión, tipos de mensaje, validaciones
+  y límites.
+
+### Durante implementación
 - Instalar dependencias de forma reproducible y ejecutar `npm run build`.
 - Revisar la exportación estática y abrir la PWA desde la ruta `/JarbeesMotion/`
   en GitHub Pages; confirmar manifest, iconos y registro del service worker.
-- Ejecutar la prueba real de WSS/entrada con Moto G(7) Plus y Windows.
-- Probar pérdida de red, reinicio del Bridge, token vencido, múltiples clientes,
-  firewall bloqueado y botón de desconexión.
+- **Medir latencia de extremo a extremo** (mediana y percentil 95) en red real.
+- **Pruebas de estabilidad:** varios minutos de uso continuo sin bloqueos.
+- **Pruebas de recuperación:** pérdida de red, reinicio del Bridge, token
+  vencido, múltiples intentos de cliente, firewall bloqueado.
+- **Prueba del botón de desconexión** local en Windows, efectiva incluso si el
+  teléfono perdió conexión.
 
+### Criterio de éxito final
 El build del frontend por sí solo no certifica el control remoto: esa capacidad
-solo se considera lista cuando pasan las pruebas del Bridge y del dispositivo
-real.
+solo se considera lista cuando:
+1. Pasan las pruebas del Bridge y del dispositivo real.
+2. La latencia medida es aceptable para uso diario.
+3. La liberación segura de teclas/botones funciona en todos los escenarios de
+   desconexión.
+4. Una persona puede instalar, emparejar, usar y desconectar sin configuración
+   manual peligrosa.
