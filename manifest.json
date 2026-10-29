@@ -2,13 +2,13 @@
   "id": "./",
   "name": "JarBees Motion - Control Remoto PC",
   "short_name": "JB Motion",
-  "description": "Controla tu PC Windows desde tu móvil. Mouse táctil, teclado virtual y control remoto seguro por WiFi local.",
+  "description": "Controla tu PC Windows desde tu móvil. Mouse táctil, sensores de movimiento y teclado virtual por WiFi local.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0f172a",
-  "theme_color": "#3b82f6",
+  "theme_color": "#2563eb",
   "icons": [
     {
       "src": "icons/icon-72x72.png",
@@ -62,9 +62,9 @@
   "shortcuts": [
     {
       "name": "Control Remoto",
-      "short_name": "Motion",
-      "description": "Acceso directo al controlador de mouse y teclado",
-      "url": "./motion",
+      "short_name": "Trackpad",
+      "description": "Acceso directo al control de mouse y gestos",
+      "url": "./",
       "icons": [
         {
           "src": "icons/icon-192x192.png",
@@ -74,9 +74,9 @@
       ]
     },
     {
-      "name": "Asistente JarBees",
-      "short_name": "Asistente",
-      "description": "Asistente de IA conversacional",
+      "name": "Configuración",
+      "short_name": "Conectar",
+      "description": "Configurar IP de conexión al PC Windows",
       "url": "./",
       "icons": [
         {
@@ -87,8 +87,7 @@
       ]
     }
   ],
-  "categories": ["productivity", "utilities", "tools"],
+  "categories": ["utilities", "tools", "productivity"],
   "lang": "es-AR",
   "dir": "ltr"
 }
-
