@@ -13,22 +13,22 @@ const fontSans = FontSans({
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export const metadata: Metadata = {
-  title: "JarBees",
-  description: "Asistente conversacional con IA",
+  title: "JarBees Motion - Control Remoto PC",
+  description: "Controla tu PC Windows desde tu móvil. Mouse táctil, teclado virtual y control remoto seguro.",
   manifest: `${BASE_PATH}/manifest.json`,
   icons: {
     icon: `${BASE_PATH}/JarBees_logo.png`,
-    apple: `${BASE_PATH}/JarBees_logo.png`,
+    apple: `${BASE_PATH}/apple-touch-icon.png`,
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "JarBees",
+    title: "JarBees Motion",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#06b6d4",
+  themeColor: "#3b82f6",
 };
 
 export default function RootLayout({
