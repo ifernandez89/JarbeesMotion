@@ -116,7 +116,7 @@ public class MotionService : WebSocketBehavior
     
     protected override void OnOpen()
     {
-        Log($"New connection from {Context.UserEndPoint}");
+        ReportLog($"New connection from {Context.UserEndPoint}");
     }
     
     protected override void OnMessage(MessageEventArgs e)
@@ -131,7 +131,7 @@ public class MotionService : WebSocketBehavior
                 _messageCountResetTime = DateTime.Now;
             }
             
-            if (_messageCount > Protocol.MaxMessagesPerSecond)
+            if (_messageCount > JarbeesMotionBridge.Protocol.MaxMessagesPerSecond)
             {
                 SendError("RATE_LIMIT", "Too many messages per second");
                 return;
@@ -146,9 +146,9 @@ public class MotionService : WebSocketBehavior
             }
             
             // Validate protocol version
-            if (message.Version != Protocol.Version)
+            if (message.Version != JarbeesMotionBridge.Protocol.Version)
             {
-                SendError("VERSION_MISMATCH", $"Protocol version {Protocol.Version} required");
+                SendError("VERSION_MISMATCH", $"Protocol version {JarbeesMotionBridge.Protocol.Version} required");
                 return;
             }
             
@@ -191,14 +191,14 @@ public class MotionService : WebSocketBehavior
         }
         catch (Exception ex)
         {
-            Log($"Error handling message: {ex.Message}");
+            ReportLog($"Error handling message: {ex.Message}");
             SendError("INTERNAL_ERROR", "Failed to process message");
         }
     }
     
     protected override void OnClose(CloseEventArgs e)
     {
-        Log($"Connection closed: {e.Reason}");
+        ReportLog($"Connection closed: {e.Reason}");
         
         // Release all inputs on disconnect
         InputController?.ReleaseAll();
@@ -210,9 +210,9 @@ public class MotionService : WebSocketBehavior
         }
     }
     
-    protected override void OnError(ErrorEventArgs e)
+    protected override void OnError(WebSocketSharp.ErrorEventArgs e)
     {
-        Log($"WebSocket error: {e.Message}");
+        ReportLog($"WebSocket error: {e.Message}");
     }
     
     private void HandlePairing(MotionMessage message)
@@ -228,7 +228,7 @@ public class MotionService : WebSocketBehavior
         if (result?.success == true)
         {
             _sessionToken = result.Value.token;
-            Log($"✓ Device paired: {payload.DeviceName ?? "Unknown"}");
+            ReportLog($"✓ Device paired: {payload.DeviceName ?? "Unknown"}");
             
             SendSuccess(new { sessionToken = _sessionToken, message = "Paired successfully" });
         }
@@ -246,7 +246,7 @@ public class MotionService : WebSocketBehavior
             InputController?.ReleaseAll();
             _sessionToken = null;
             SendSuccess(new { message = "Session ended" });
-            Log("Session ended by client");
+            ReportLog("Session ended by client");
         }
     }
     
@@ -315,7 +315,7 @@ public class MotionService : WebSocketBehavior
         }
         catch (Exception ex)
         {
-            Log($"Error processing input: {ex.Message}");
+            ReportLog($"Error processing input: {ex.Message}");
         }
     }
     
@@ -343,7 +343,7 @@ public class MotionService : WebSocketBehavior
     {
         var message = new MotionMessage
         {
-            Version = Protocol.Version,
+            Version = JarbeesMotionBridge.Protocol.Version,
             Type = type,
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = payload
@@ -352,7 +352,7 @@ public class MotionService : WebSocketBehavior
         return JsonConvert.SerializeObject(message);
     }
     
-    private void Log(string message)
+    private void ReportLog(string message)
     {
         LogMessage?.Invoke(this, message);
     }

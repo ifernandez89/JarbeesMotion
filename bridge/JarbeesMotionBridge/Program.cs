@@ -246,6 +246,7 @@ public class MainForm : Form
             _ipLabel!.Text = $"Connect from mobile device:\nwss://{localIp}:{DefaultPort}/motion";
             
             Log($"✓ Bridge started on port {DefaultPort}");
+            Log(CertificateManager.GetInstallInstructions(_certificateManager.MobileCaCertificatePath));
             Log($"✓ Pairing code: {code}");
         }
         catch (Exception ex)

@@ -1,54 +1,50 @@
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using Org.BouncyCastle.Asn1.X509;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.Crypto.Generators;
-using Org.BouncyCastle.Crypto.Operators;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.Math;
-using Org.BouncyCastle.Security;
-using Org.BouncyCastle.X509;
 
 namespace JarbeesMotionBridge;
 
 /// <summary>
-/// Manages SSL certificates for WebSocket Secure (WSS) connections
-/// Generates self-signed certificates for local network use
+/// Creates a local certificate authority and issues a WSS certificate for this PC.
+/// The CA private key stays on this Windows user account; only its public certificate
+/// should be installed on a mobile device.
 /// </summary>
 public class CertificateManager
 {
     private readonly string _certificatePath;
-    private readonly string _certificatePassword = "JarbeesMotionBridge2024";
-    
+    private readonly string _authorityPath;
+    private readonly string _authorityPublicPath;
+    private readonly string _passwordPath;
+
     public CertificateManager(string certificatePath)
     {
         _certificatePath = certificatePath;
+        var directory = Path.GetDirectoryName(certificatePath)
+            ?? throw new ArgumentException("Certificate path must include a directory.", nameof(certificatePath));
+        _authorityPath = Path.Combine(directory, "bridge-ca.pfx");
+        _authorityPublicPath = Path.Combine(directory, "bridge-ca.cer");
+        _passwordPath = Path.Combine(directory, "bridge-ca-password.dpapi");
     }
-    
-    /// <summary>
-    /// Get or create certificate for WSS
-    /// </summary>
+
+    public string MobileCaCertificatePath => _authorityPublicPath;
+
     public X509Certificate2? GetOrCreateCertificate()
     {
         try
         {
-            // Try to load existing certificate
-            if (File.Exists(_certificatePath))
-            {
-                var cert = new X509Certificate2(_certificatePath, _certificatePassword);
-                
-                // Check if certificate is still valid
-                if (cert.NotAfter > DateTime.Now.AddDays(30))
-                {
-                    return cert;
-                }
-                
-                // Certificate expiring soon, generate new one
-                cert.Dispose();
-            }
-            
-            // Generate new self-signed certificate
-            return GenerateSelfSignedCertificate();
+            var password = GetOrCreatePassword();
+            using var authority = GetOrCreateAuthority(password);
+            File.WriteAllBytes(_authorityPublicPath, authority.Export(X509ContentType.Cert));
+
+            var certificateBytes = CreateServerCertificate(authority, password);
+            File.WriteAllBytes(_certificatePath, certificateBytes);
+
+            return new X509Certificate2(
+                certificateBytes,
+                password,
+                X509KeyStorageFlags.EphemeralKeySet);
         }
         catch (Exception ex)
         {
@@ -56,102 +52,133 @@ public class CertificateManager
             return null;
         }
     }
-    
-    private X509Certificate2 GenerateSelfSignedCertificate()
+
+    private string GetOrCreatePassword()
     {
-        // Generate RSA key pair
-        var random = new SecureRandom();
-        var keyPairGenerator = new RsaKeyPairGenerator();
-        keyPairGenerator.Init(new KeyGenerationParameters(random, 2048));
-        var keyPair = keyPairGenerator.GenerateKeyPair();
-        
-        // Certificate details
-        var certificateGenerator = new X509V3CertificateGenerator();
-        
-        // Serial number
-        var serialNumber = BigInteger.ProbablePrime(120, random);
-        certificateGenerator.SetSerialNumber(serialNumber);
-        
-        // Subject and Issuer (same for self-signed)
-        var subjectDN = new X509Name("CN=JarBees Motion Bridge,O=JarBees,C=US");
-        var issuerDN = subjectDN;
-        certificateGenerator.SetIssuerDN(issuerDN);
-        certificateGenerator.SetSubjectDN(subjectDN);
-        
-        // Valid period: 1 year
-        certificateGenerator.SetNotBefore(DateTime.UtcNow.Date);
-        certificateGenerator.SetNotAfter(DateTime.UtcNow.Date.AddYears(1));
-        
-        // Public key
-        certificateGenerator.SetPublicKey(keyPair.Public);
-        
-        // Extensions
-        certificateGenerator.AddExtension(
-            X509Extensions.KeyUsage,
-            true,
-            new KeyUsage(KeyUsage.DigitalSignature | KeyUsage.KeyEncipherment));
-        
-        certificateGenerator.AddExtension(
-            X509Extensions.ExtendedKeyUsage,
-            false,
-            new ExtendedKeyUsage(KeyPurposeID.IdKPServerAuth));
-        
-        // Subject Alternative Names (localhost + local IP)
-        var subjectAlternativeNames = new Asn1Encodable[]
+        if (File.Exists(_passwordPath))
         {
-            new GeneralName(GeneralName.DnsName, "localhost"),
-            new GeneralName(GeneralName.DnsName, Environment.MachineName),
-            new GeneralName(GeneralName.IPAddress, "127.0.0.1")
-        };
-        
-        certificateGenerator.AddExtension(
-            X509Extensions.SubjectAlternativeName,
-            false,
-            new DerSequence(subjectAlternativeNames));
-        
-        // Sign certificate
-        ISignatureFactory signatureFactory = new Asn1SignatureFactory(
-            "SHA256WithRSA",
-            keyPair.Private,
-            random);
-        
-        var bouncyCert = certificateGenerator.Generate(signatureFactory);
-        
-        // Convert to .NET X509Certificate2
-        var cert = new X509Certificate2(bouncyCert.GetEncoded());
-        
-        // Add private key
-        var rsaPrivateKey = DotNetUtilities.ToRSA((RsaPrivateCrtKeyParameters)keyPair.Private);
-        var certWithKey = cert.CopyWithPrivateKey(rsaPrivateKey);
-        
-        // Export to PFX format with password
-        var pfxBytes = certWithKey.Export(X509ContentType.Pfx, _certificatePassword);
-        
-        // Save to disk
-        File.WriteAllBytes(_certificatePath, pfxBytes);
-        Console.WriteLine($"Generated new self-signed certificate: {_certificatePath}");
-        
-        // Return certificate with private key
-        return new X509Certificate2(pfxBytes, _certificatePassword);
+            var protectedPassword = File.ReadAllBytes(_passwordPath);
+            var passwordBytes = ProtectedData.Unprotect(
+                protectedPassword,
+                optionalEntropy: null,
+                DataProtectionScope.CurrentUser);
+            return Convert.ToBase64String(passwordBytes);
+        }
+
+        var generatedPassword = RandomNumberGenerator.GetBytes(32);
+        var protectedBytes = ProtectedData.Protect(
+            generatedPassword,
+            optionalEntropy: null,
+            DataProtectionScope.CurrentUser);
+        File.WriteAllBytes(_passwordPath, protectedBytes);
+        return Convert.ToBase64String(generatedPassword);
     }
-    
-    /// <summary>
-    /// Get certificate instructions for mobile devices
-    /// </summary>
-    public static string GetInstallInstructions()
+
+    private X509Certificate2 GetOrCreateAuthority(string password)
     {
-        return @"
-To connect from your mobile device:
+        if (File.Exists(_authorityPath))
+        {
+            var existingAuthority = new X509Certificate2(
+                _authorityPath,
+                password,
+                X509KeyStorageFlags.EphemeralKeySet);
 
-1. The Bridge uses a self-signed certificate for secure connections
-2. First connection will show a security warning in your browser
-3. On Android Chrome:
-   - Tap 'Advanced'
-   - Tap 'Proceed to [IP address] (unsafe)'
-4. The certificate will be remembered for this session
-5. For permanent trust, you can install the certificate in your device settings
+            if (existingAuthority.NotAfter > DateTime.UtcNow.AddDays(30))
+            {
+                return existingAuthority;
+            }
 
-Alternative: Use mDNS/Bonjour (.local domain) if supported by your network.
-";
+            existingAuthority.Dispose();
+        }
+
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=JarBees Motion Local CA",
+            key,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(
+            new X509BasicConstraintsExtension(true, false, 0, critical: true));
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension(
+                X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign,
+                critical: true));
+        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+
+        using var authority = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddMinutes(-5),
+            DateTimeOffset.UtcNow.AddYears(10));
+        var authorityBytes = authority.Export(X509ContentType.Pfx, password);
+        File.WriteAllBytes(_authorityPath, authorityBytes);
+        return new X509Certificate2(
+            authorityBytes,
+            password,
+            X509KeyStorageFlags.EphemeralKeySet);
+    }
+
+    private static byte[] CreateServerCertificate(X509Certificate2 authority, string password)
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            $"CN={Environment.MachineName}",
+            key,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(
+            new X509BasicConstraintsExtension(false, false, 0, critical: true));
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension(
+                X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
+                critical: true));
+        request.CertificateExtensions.Add(
+            new X509EnhancedKeyUsageExtension(
+                new OidCollection { new("1.3.6.1.5.5.7.3.1") },
+                critical: false));
+        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+
+        var subjectAlternativeNames = new SubjectAlternativeNameBuilder();
+        subjectAlternativeNames.AddDnsName("localhost");
+        subjectAlternativeNames.AddDnsName(Environment.MachineName);
+        subjectAlternativeNames.AddIpAddress(IPAddress.Loopback);
+
+        foreach (var address in GetLocalIpAddresses())
+        {
+            subjectAlternativeNames.AddIpAddress(address);
+        }
+
+        request.CertificateExtensions.Add(subjectAlternativeNames.Build());
+
+        var serialNumber = RandomNumberGenerator.GetBytes(16);
+        using var publicCertificate = request.Create(
+            authority,
+            DateTimeOffset.UtcNow.AddMinutes(-5),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialNumber);
+        using var certificateWithKey = publicCertificate.CopyWithPrivateKey(key);
+        return certificateWithKey.Export(X509ContentType.Pfx, password);
+    }
+
+    private static IEnumerable<IPAddress> GetLocalIpAddresses()
+    {
+        return NetworkInterface.GetAllNetworkInterfaces()
+            .Where(network => network.OperationalStatus == OperationalStatus.Up)
+            .SelectMany(network => network.GetIPProperties().UnicastAddresses)
+            .Select(unicast => unicast.Address)
+            .Where(address =>
+                address.AddressFamily == AddressFamily.InterNetwork &&
+                !IPAddress.IsLoopback(address) &&
+                !address.ToString().StartsWith("169.254.", StringComparison.Ordinal));
+    }
+
+    public static string GetInstallInstructions(string certificatePath)
+    {
+        return $"""
+            Install only this public CA certificate on the Moto:
+            {certificatePath}
+
+            Android 10: Settings > Security > Encryption & credentials > Install a certificate > CA certificate.
+            Import the .cer file, then retry the connection in Brave. Do not copy the .pfx or .dpapi files to the phone.
+            Remove this user CA from Android after testing if you no longer need the Bridge.
+            """;
     }
 }

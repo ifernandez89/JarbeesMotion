@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useMotionClient } from "@/lib/motion/useMotionClient";
-import { ConnectionState, MouseButtonType, MouseButtonAction } from "@/types/motion";
+import { ConnectionState } from "@/types/motion";
 import { Trackpad } from "./Trackpad";
 import { VirtualKeyboard } from "./VirtualKeyboard";
 import { ConnectionStatus } from "./ConnectionStatus";

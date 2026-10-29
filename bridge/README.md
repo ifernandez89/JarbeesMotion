@@ -6,12 +6,12 @@ Windows desktop application that receives mouse and keyboard control commands fr
 
 - **Windows 10** (version 1809 or later) or **Windows 11**
 - **.NET 8.0 Runtime** ([Download](https://dotnet.microsoft.com/download/dotnet/8.0))
-- Administrator rights (first run only, for certificate generation)
+- Administrator rights only if manually changing Windows Firewall rules
 - Local network connection (same WiFi as mobile device)
 
 ## Features
 
-- ✅ Secure WebSocket (WSS) with self-signed certificates
+- ⚠️ WSS prototype with a locally generated CA; install its public CA certificate on Android and verify browser trust before pairing
 - ✅ 6-digit pairing code authentication
 - ✅ Mouse control with relative movement (trackpad style)
 - ✅ Keyboard input (text + special keys)
@@ -72,10 +72,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ## First Run Setup
 
-1. **Run as Administrator** (first time only)
-   - Right-click `JarbeesMotionBridge.exe`
-   - Select "Run as administrator"
-   - This generates the SSL certificate
+1. Run `JarbeesMotionBridge.exe` as the normal Windows user. The CA and certificates are stored in the current user's application data; administrator privileges are not required for certificate generation.
 
 2. **Allow in Windows Firewall**
    - When prompted, click "Allow access"
@@ -92,7 +89,8 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 1. Launch JarbeesMotionBridge.exe
 2. Click **"Start Bridge"**
 3. Note the 6-digit pairing code displayed
-4. Share this code with your mobile device
+4. Copy the public certificate path from the Bridge log (`%APPDATA%\JarbeesMotionBridge\bridge-ca.cer`) and install it on the Moto before connecting
+5. Share the pairing code with your mobile device
 
 ### Pairing a Device
 
@@ -100,7 +98,8 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 2. Navigate to `/motion`
 3. Enter the 6-digit code from the Bridge
 4. Tap "Connect"
-5. Accept the certificate warning (first time only)
+5. On Android 10, install `%APPDATA%\JarbeesMotionBridge\bridge-ca.cer` under **Settings > Security > Encryption & credentials > Install a certificate > CA certificate**. Do not copy `bridge-ca.pfx` or `bridge-ca-password.dpapi` to the phone.
+6. Retry in Brave. If Brave does not trust the installed user CA, stop and record the error; do not bypass TLS validation.
 
 ### Controlling Windows
 
@@ -119,7 +118,7 @@ If something goes wrong:
 
 ### Security Notes
 
-- Bridge only accepts connections from the local network
+- The server listens on all PC network interfaces; use Windows Firewall to limit access to the trusted private network and never port-forward the Bridge
 - Each pairing code is valid for 10 minutes
 - Sessions expire after 30 minutes of inactivity
 - Only one device can be connected at a time
@@ -161,12 +160,15 @@ Add an exception for:
 3. Router doesn't have AP isolation enabled
 4. Guest network isolation is disabled
 
-### Certificate warning on mobile
+### Certificate error on mobile
 
-**This is normal** for self-signed certificates:
-- On first connection, you'll see a security warning
-- Tap "Advanced" → "Proceed anyway"
-- Certificate will be remembered for this session
+The browser's WebSocket API cannot bypass an invalid or untrusted TLS
+certificate by accepting a normal page warning. Do not proceed with an
+untrusted connection. Install only `bridge-ca.cer` on Android; the Bridge
+creates a server certificate containing the current LAN IP addresses. If Brave
+still rejects it, record the error and stop rather than bypassing TLS
+validation. Remove the user CA from Android after testing if it is no longer
+needed.
 
 ### Mouse doesn't move
 

@@ -54,13 +54,6 @@ export default function MotionPage() {
     setIsConfigured(true);
   };
 
-  const handleReset = () => {
-    localStorage.removeItem("jarbees-motion-bridge-url");
-    setBridgeUrl("");
-    setManualUrl("");
-    setIsConfigured(false);
-  };
-
   // Show controller if URL is configured
   if (isConfigured && bridgeUrl) {
     return <MotionController bridgeUrl={bridgeUrl} />;

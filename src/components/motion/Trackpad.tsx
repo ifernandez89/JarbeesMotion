@@ -1,11 +1,15 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import { MouseButtonType, MouseButtonAction } from "@/types/motion";
+import {
+  MouseButtonAction,
+  MouseButtonType,
+  type MouseButtonPayload,
+} from "@/types/motion";
 
 interface TrackpadProps {
   onMove: (deltaX: number, deltaY: number) => void;
-  onButton: (button: MouseButtonType, action: MouseButtonAction) => void;
+  onButton: (payload: MouseButtonPayload) => void;
   onScroll: (deltaX: number, deltaY: number) => void;
   sensitivity?: number;
   enabled?: boolean;
@@ -70,9 +74,9 @@ export function Trackpad({
       const touchDuration = Date.now() - touchStartTime;
       if (touchDuration < 200 && !touchMoved) {
         // Single tap = left click
-        onButton(MouseButtonType.Left, MouseButtonAction.Press);
+        onButton({ button: MouseButtonType.Left, action: MouseButtonAction.Press });
         setTimeout(() => {
-          onButton(MouseButtonType.Left, MouseButtonAction.Release);
+          onButton({ button: MouseButtonType.Left, action: MouseButtonAction.Release });
         }, 50);
       }
       
@@ -206,9 +210,9 @@ export function Trackpad({
         <button
           onClick={() => {
             if (!enabled) return;
-            onButton(MouseButtonType.Left, MouseButtonAction.Press);
+            onButton({ button: MouseButtonType.Left, action: MouseButtonAction.Press });
             setTimeout(() => {
-              onButton(MouseButtonType.Left, MouseButtonAction.Release);
+              onButton({ button: MouseButtonType.Left, action: MouseButtonAction.Release });
             }, 100);
           }}
           disabled={!enabled}
@@ -220,9 +224,9 @@ export function Trackpad({
         <button
           onClick={() => {
             if (!enabled) return;
-            onButton(MouseButtonType.Right, MouseButtonAction.Press);
+            onButton({ button: MouseButtonType.Right, action: MouseButtonAction.Press });
             setTimeout(() => {
-              onButton(MouseButtonType.Right, MouseButtonAction.Release);
+              onButton({ button: MouseButtonType.Right, action: MouseButtonAction.Release });
             }, 100);
           }}
           disabled={!enabled}

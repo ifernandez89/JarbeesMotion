@@ -51,6 +51,11 @@ export function useMotionClient(
   const [error, setError] = useState<Error | null>(null);
   
   const clientRef = useRef<MotionClient | null>(null);
+  const onErrorRef = useRef(options.onError);
+
+  useEffect(() => {
+    onErrorRef.current = options.onError;
+  }, [options.onError]);
 
   // Initialize client
   useEffect(() => {
@@ -71,7 +76,7 @@ export function useMotionClient(
       },
       onError: (err: Error) => {
         setError(err);
-        options.onError?.(err);
+        onErrorRef.current?.(err);
       },
       onLatencyUpdate: (ms: number) => {
         setLatency(ms);
@@ -98,7 +103,7 @@ export function useMotionClient(
         clientRef.current = null;
       }
     };
-  }, [options.bridgeUrl, options.autoConnect, options.onError]);
+  }, [options.bridgeUrl, options.autoConnect]);
 
   // Connection methods
   const connect = useCallback(() => {

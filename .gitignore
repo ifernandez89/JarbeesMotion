@@ -19,6 +19,8 @@
 
 # production
 /build
+bridge/**/bin/
+bridge/**/obj/
 
 # misc
 .DS_Store

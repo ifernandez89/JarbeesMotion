@@ -1,31 +1,35 @@
 # JarBees Motion v2.0.0 - Verification Checklist
 
-**Status:** 🟡 PENDING - Implementation complete, awaiting real-world testing
+**Status:** 🔴 NOT PRODUCTION-READY — local builds verified; Windows Bridge startup, TLS/networking, and Moto G(7) Plus hardware testing remain incomplete.
 
 This document tracks the verification of JarBees Motion on actual hardware. All tests must pass before the release can be considered production-ready.
 
 ## Test Environment
 
-- **Windows PC:** [Version to be filled]
-- **Mobile Device:** Moto G(7) Plus, Android [Version]
-- **Network:** [WiFi Router Model/Type]
-- **Browser:** [Chrome/Edge version]
+- **Verification run:** 2026-10-29 (local development environment only)
+- **Windows PC:** Windows 11 Pro, build 26200
+- **Mobile Device:** Moto G(7) Plus, Android 10 — available to the user; not physically tested by this verification run
+- **Network:** Not tested
+- **Browser:** Brave 1.97.59 (Chromium) — reported by the user; not tested on the Moto G(7) Plus
+- **Important:** A local build is not a real-device or end-to-end verification.
 
 ## Phase 0: Build Verification
 
 ### Bridge Compilation
 
 ```powershell
-cd c:\Projects\JarbeesMotion\bridge
+cd c:\Projects\JarbeesMotion
 dotnet --info
-dotnet build -c Release
+dotnet build bridge\JarbeesMotionBridge.sln -c Release
 ```
 
 **Results:**
-- [ ] .NET SDK version: ________________
-- [ ] Build completed: ☐ Success ☐ Errors
-- [ ] Warnings (if any): ________________
-- [ ] Output location: ________________
+- [x] .NET SDK version: 10.0.101 (target framework: net8.0-windows)
+- [x] Build completed: ☒ Success ☐ Errors
+- [x] Warnings (if any): 0 warnings, 0 errors
+- [x] Output: `bridge\JarbeesMotionBridge\bin\Release\net8.0-windows\JarbeesMotionBridge.exe` and `.dll`
+- [x] Local certificate smoke test: CA generated, server certificate chains to it, and an active LAN IPv4 address is present in the SAN.
+- [ ] Bridge launched and exercised on the user's Windows PC: not tested
 
 **Expected Output:**
 ```
@@ -43,11 +47,13 @@ npm ci --legacy-peer-deps
 npm run build
 ```
 
-**Results:**
-- [ ] Node version: ________________
-- [ ] Build completed: ☐ Success ☐ Errors
-- [ ] Export successful: ☐ Yes ☐ No
-- [ ] Static files in: `out/` ☐ Verified
+**Results (local run on 2026-10-29):**
+- [x] Node version: v22.19.0; npm 10.9.3
+- [x] Build completed: ☒ Success ☐ Errors
+- [x] Export successful: ☒ Yes ☐ No
+- [x] Static files in: `out/` ☒ Verified (including `/motion`)
+- [ ] PWA deployed and opened on the Moto G(7) Plus: not tested
+- **Build note:** static generation logged `ECONNREFUSED` for the optional local reader backend at `http://localhost:4000`; export still succeeded.
 
 **Expected Output:**
 ```
@@ -60,7 +66,7 @@ npm run build
 ### Bridge Startup
 
 **Test Steps:**
-1. Run `JarbeesMotionBridge.exe` (as Administrator first time)
+1. Run `JarbeesMotionBridge.exe` as the normal Windows user
 2. Observe certificate generation
 3. Note IP address displayed
 4. Note 6-digit pairing code
@@ -100,20 +106,39 @@ npm run build
 **Test Steps:**
 1. In PWA, enter Bridge IP address
 2. Tap "Connect"
-3. Accept certificate warning (if shown)
+3. Verify that TLS presents a certificate trusted by Android Chrome and valid for the exact Bridge IP/host
 4. Observe connection state
 
 **Results:**
 - [ ] Connection initiated: ☐ Yes ☐ No
-- [ ] Certificate warning: ☐ Shown ☐ Not shown
-- [ ] Certificate accepted: ☐ Yes ☐ No ☐ N/A
+- [ ] Certificate trusted and hostname/IP verified: ☐ Yes ☐ No
 - [ ] Connection state: ☐ Connected ☐ Error
 - [ ] Error message (if any): ________________
 
 **Common Issues:**
 - ❌ "Connection refused" → Check firewall
-- ❌ "Certificate invalid" → Accept self-signed cert
+- ❌ "Certificate invalid" → Stop; the PWA cannot bypass TLS certificate errors. Install a certificate trusted by Android Chrome and valid for the Bridge host/IP.
 - ❌ "Network error" → Check same WiFi network
+
+**Certificate testing requirement:** the Bridge now creates a local CA and a
+server certificate containing the PC's current LAN IP addresses. Install only
+the public `bridge-ca.cer` on Android 10; never copy the CA PFX or DPAPI
+password file. A browser WebSocket connection cannot bypass TLS validation.
+Brave trust, certificate hostname validation, and local-network permission
+remain untested and must pass before pairing can be marked successful.
+
+The Bridge binds to `0.0.0.0`; its reachability is controlled by Windows
+Firewall/network configuration. Confirm the inbound rule is limited to a
+trusted private network, and do not configure port forwarding.
+
+## Verification run summary (2026-10-29)
+
+- PWA production build and static export: **PASS** (`npm run build`; `/motion` is exported).
+- Bridge Release compilation: **PASS** (`dotnet build bridge\JarbeesMotionBridge.sln -c Release`; 0 warnings, 0 errors).
+- Real Windows Bridge startup, TLS handshake, pairing, input, disconnect and emergency stop: **NOT TESTED**.
+- Moto G(7) Plus browser, Wi-Fi, touch gestures, keyboard and latency: **NOT TESTED**.
+- Certificate CA implementation: **local smoke test passed**. Android/Brave trust and a live WSS connection remain unverified.
+- Production readiness: **NO**. Real device, network, authorization and input safety tests remain incomplete.
 
 ### Pairing
 
