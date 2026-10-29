@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter as FontSans } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,6 @@ export const metadata: Metadata = {
     icon: `${BASE_PATH}/JarBees_logo.png`,
     apple: `${BASE_PATH}/JarBees_logo.png`,
   },
-  themeColor: '#06b6d4',
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -28,15 +27,17 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#06b6d4",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
   return (
-    <html lang="en">
+    <html lang="es-AR">
       <body
         className={cn(
           "min-h-screen bg-background font-sans antialiased",
@@ -46,20 +47,6 @@ export default function RootLayout({
         {children}
         <RegisterSW />
         <InstallPWA />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  var swPath = '${BASE_PATH}/sw.js';
-                  navigator.serviceWorker.register(swPath, { 
-                    scope: '${BASE_PATH}/' 
-                  }).catch(function() {});
-                });
-              }
-            `,
-          }}
-        />
       </body>
     </html>
   );

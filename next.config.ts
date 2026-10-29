@@ -10,7 +10,7 @@ try {
 }
 
 const isProduction = process.env.NODE_ENV === 'production';
-const repoBasePath = isProduction ? '/Jarbees' : '';
+const repoBasePath = isProduction ? '/JarbeesMotion' : '';
 
 const nextConfig: NextConfig = {
   output: 'export',

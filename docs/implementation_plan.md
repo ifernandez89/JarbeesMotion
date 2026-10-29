@@ -1,128 +1,173 @@
-# Plan de Implementación: JarBees Mobile - Edge Command Interpreter (V1 Actualizado)
+# JarBees Motion — plan del Windows Motion Bridge
 
-Transformación de la interfaz de JarBees hacia una aplicación asistente **Mobile-First**, impulsada por un intérprete de comandos ligero en el borde (**Qwen2.5-0.5B-Instruct**) con despacho estructurado de intenciones (Intents JSON), inyección de contexto del dispositivo, arquitectura desacoplada de proveedores (`InterpreterProvider`), robustez en parsing y panel de diagnóstico en tiempo real.
+## Evaluación de preparación
 
----
+**Conclusión: base parcial; aún no estamos listos para controlar Windows.**
+Hay una PWA y una interfaz móvil que se pueden reutilizar, pero el camino de
+entrada completo —gestos, protocolo, emparejamiento, receptor Windows e
+inyección de entrada— todavía no existe.
 
-## 1. Arquitectura y Nuevas Consideraciones Técnicas
+| Área | Estado observado | Consecuencia |
+|---|---|---|
+| PWA y UI móvil | Implementadas para el asistente JarBees Mobile | Reutilizar la base, pero diseñar una interfaz de trackpad específica |
+| Movimiento y clics | No se encontró una interfaz de mouse | Hay que crearla |
+| Teclado remoto | No se encontró un teclado que controle Windows | Hay que crear el cliente y definir el protocolo |
+| Transporte | El Core usa HTTP; no se encontró WebSocket | Crear un canal independiente PWA–Bridge |
+| Receptor Windows | No existe en este repositorio | Crear y distribuir una aplicación separada para Windows |
+| Entrada de Windows | No hay integración con `SendInput` ni equivalente | Implementarla detrás de una capa controlada del Bridge |
+| Emparejamiento y autorización | No existe para el control de PC | Requisito previo a exponer el Bridge en la LAN |
+| Sensores/Auren | Hay contexto móvil simulado y capacidades de navegador; no hay control por orientación conectado al PC | Dejarlo para una fase posterior |
+| Publicación PWA | Next.js hace exportación estática; había rutas de otra app y un `basePath` distinto al repositorio | Corregir rutas y validar el deploy antes del enlace con el Bridge |
 
-```mermaid
-flowchart TD
-    User([Usuario]) -->|Voz: Push-to-Talk / Tap con VAD| STT[Audio & Web Speech Engine]
-    User -->|Texto rápido ⌨️| Input[Input Bar]
-    
-    STT --> AudioVisualizer[Visualizador de Onda / Ripple]
-    AudioVisualizer --> ContextEngine[Device Context Engine\n(Batería, Auriculares, Volumen, Música, Hora)]
-    Input --> ContextEngine
+El gateway HTTP que aparece en `src/lib/jarbees-mobile/services/` conecta el
+asistente con JarBees Core; **no** es un receptor de mouse/teclado ni debe
+reutilizarse como uno.
 
-    ContextEngine --> ProviderRouter{InterpreterProvider Interface}
-    ProviderRouter -->|Modo Server| ServerProvider[ServerApiProvider\n(/api/jarbees/interpret -> Ollama / llama.cpp)]
-    ProviderRouter -->|Modo WebGPU / On-Device| WebGpuProvider[WebGpuLocalProvider / Wasm]
-    ProviderRouter -->|Modo Fallback / Offline| MockProvider[RuleFallbackProvider]
+## Arquitectura objetivo
 
-    ServerProvider --> RobustParser[Extractor Regex + Normalizador Seguro + Fallback a Handoff]
-    WebGpuProvider --> RobustParser
-    MockProvider --> RobustParser
-
-    RobustParser --> Dispatcher[Command Dispatcher]
-
-    Dispatcher -->|domain: 'device' / 'audio' / 'media'| NativeActions[Control de Dispositivo / Simulación Android]
-    Dispatcher -->|domain: 'context'| ContextQuery[Lectura y Respuesta de Estado]
-    Dispatcher -->|domain: 'jarbees'| JarbeesState[Estado Asistente: Wake/Sleep/Status]
-    Dispatcher -->|domain: 'handoff'| JarbeesCore[JarBees Core Backend / RAG]
-
-    Dispatcher --> UIState[UI State: Acciones Recientes + Feedback Visual/Sonoro]
-    Dispatcher --> DevMode[Developer Mode / Diagnostics Panel]
+```text
+Moto G(7) Plus — PWA JarBees Motion
+  Trackpad / teclado / estado de conexión
+  Emparejamiento y control explícito de sesión
+               │
+               │ WSS, protocolo versionado y autenticado
+               ▼
+Windows — JarBees Motion Bridge (proceso independiente)
+  Validación de mensajes y límites
+  Capa de entrada Windows
+  Estado visible, desconexión y parada inmediata
 ```
 
----
+La PWA sigue siendo estática. El Bridge debe ejecutarse en la PC y aceptar
+conexiones únicamente cuando el usuario lo inicia y autoriza. Mismo Wi-Fi no
+garantiza conectividad: el firewall, redes de invitados y el aislamiento de
+clientes pueden bloquear tráfico entre dispositivos.
 
-## 2. Pilares de Robustez e Innovación
+## Decisión técnica recomendada
 
-### A. Parser Resiliente y Manejo de Errores JSON
-- **Aislamiento por Regex:** Extracción segura de objetos `{ ... }` ignorando backticks markdown, preámbulos o texto residual.
-- **Normalización de Dominios:** Sanitización de esquemas variantes (e.g. mapeo de `toggle_light` a `flashlight`, fusión inteligente de `media`/`audio`).
-- **Safe Fallback:** Si la respuesta no es un JSON procesable o está corrupta, el `commandDispatcher` la encapsula como `{ domain: "handoff", query: userInput, reason: "parser_fallback" }` sin romper el ciclo de vida de la UI ni la experiencia de usuario.
+Mantener Next.js/React en la PWA. Para el Bridge, hacer primero una prueba
+pequeña de `SendInput` y WebSocket en Windows antes de fijar la tecnología:
 
-### B. Capa de Abstracción `InterpreterProvider`
-Diseño bajo el patrón Estrategia para admitir múltiples motores de ejecución:
-1. **`ServerApiProvider`**: Consume `/api/jarbees/interpret` conectado al backend local (Ollama / llama-server / Qwen GGUF).
-2. **`WebGpuLocalProvider`**: Preparado para ejecución on-device 100% en el navegador/celular vía WebGPU (Transformers.js / WebLLM).
-3. **`RuleFallbackProvider`**: Motor offline inmediato basado en reglas para desarrollo, testing y escenarios sin conexión.
-- *Permite seleccionar el proveedor activo al instante desde el Drawer de Configuración / Modo Desarrollador.*
+- **C#/.NET es la opción recomendada para el primer Bridge distribuible**:
+  Windows ofrece `SendInput` mediante Win32 y C# puede llamarlo con P/Invoke,
+  sin desarrollar un driver ni mantener un ejecutable C++.
+- **Node.js sigue siendo viable** para el servidor WebSocket, pero Node por sí
+  solo no incluye una API para inyectar eventos de Windows. Se necesitaría una
+  dependencia nativa compatible, un helper separado o una integración nativa;
+  esa dependencia debe probarse y empaquetarse antes de elegir Node para el
+  Bridge.
 
-### C. Voice Input con Detección de Silencio (VAD)
-- **Push-to-Talk (Mantener pulsado):** Graba mientras el usuario mantiene el dedo presionado sobre el micrófono central.
-- **Tap-to-Talk (Tocar una vez):** Activa el micrófono y aplica un temporizador de silencio (VAD simple ~1.5s de inactividad de voz) para disparar la inferencia automáticamente sin forzar un segundo toque.
-- **Fallback a Texto:** Si los permisos de audio son denegados o no soportados, la barra de texto se activa fluidamente.
+No ejecutar comandos de shell arbitrarios recibidos desde la PWA. El Bridge
+debe aceptar exclusivamente acciones explícitas y validadas. No usar Ngrok ni
+exponer el Bridge a Internet para este flujo local.
 
----
+## Riesgos y requisitos previos
 
-## 3. Contrato de Intenciones (Intent Schema)
+1. **HTTPS/WSS:** la PWA publicada se sirve por HTTPS. Una conexión `ws://` a
+   una IP de la LAN puede quedar bloqueada como contenido mixto. La solución
+   debe usar WSS con certificado confiable por el teléfono o una estrategia de
+   origen seguro local compatible con los navegadores objetivo. Verificarlo en
+   el Moto G(7) Plus real; no dar por hecho que compartir Wi-Fi resuelve esta
+   política.
+2. **Red local:** probar permisos de acceso a dispositivos de la red local,
+   firewall de Windows, redes de invitados, aislamiento de clientes y cambios
+   de IP. Informar al usuario si no hay conectividad.
+3. **Autorización:** mostrar un código de emparejamiento de corta duración,
+   limitar intentos y exigir aprobación local en Windows. Validar `Origin`,
+   autenticar la sesión y no incluir secretos en URL, logs o repositorio.
+4. **Control seguro:** permitir solo mensajes versionados de mouse/teclado;
+   validar tipos y rangos, limitar frecuencia y tamaño, cerrar sesiones
+   inválidas y detener botones/teclas mantenidos al desconectar o expirar la
+   sesión.
+5. **Consentimiento y control:** mostrar en Windows cuándo hay una sesión
+   activa y ofrecer una desconexión inmediata. No iniciar automáticamente el
+   Bridge con Windows en el primer prototipo.
+6. **Límites de Windows:** `SendInput` no evita UAC ni controla de forma
+   fiable escritorios seguros o pantallas de inicio de sesión; documentar
+   esos límites.
 
-| Dominio (`domain`) | Acciones representativas (`action`) | Ejemplo de salida JSON |
-| :--- | :--- | :--- |
-| **`device`** | `open_app`, `flashlight`, `toggle_wifi`, `toggle_bluetooth` | `{"domain": "device", "action": "open_app", "target": "camera"}` |
-| **`audio`** | `volume_up`, `volume_down`, `set_volume`, `set_mode`, `mute` | `{"domain": "audio", "action": "volume_down", "amount": 20}` |
-| **`media`** | `play`, `pause`, `next`, `previous`, `stop` | `{"domain": "media", "action": "play", "output": "headphones"}` |
-| **`context`** | `headphones_status`, `battery_status`, `time_status`, `screen_status` | `{"domain": "context", "action": "battery_status"}` |
-| **`jarbees`** | `wake`, `sleep`, `status` | `{"domain": "jarbees", "action": "status"}` |
-| **`handoff`** | `query`, `complex_reasoning`, `knowledge_base` | `{"domain": "handoff", "query": "¿Qué expedientes tengo pendientes?", "reason": "rag_query"}` |
+## Plan por fases
 
----
+### Fase 0 — Prueba de viabilidad y contrato
 
-## 4. Estructura de Componentes y Archivos
+- Probar, en un Windows y en el Moto real, la conexión PWA HTTPS a un Bridge
+  WSS local con certificado confiable y permisos de red local.
+- Comparar una llamada mínima a `SendInput` en C# con la alternativa de Node y
+  elegir el runtime del Bridge a partir de compatibilidad y distribución.
+- Definir versión de protocolo, emparejamiento, caducidad de sesión,
+  desconexión y límites. No implementar el envío de eventos antes de cerrar
+  estas decisiones.
 
-### Modelos y Tipos
-- #### [NEW] [jarbeesMobile.types.ts](file:///c:/next/Jarbees/src/lib/jarbees-mobile/jarbeesMobile.types.ts)
-  - Tipos para `Intent`, `DeviceContext`, `AssistantState`, `RecentAction`, `DiagnosticsInfo`, `InterpreterProvider`.
+**Salida:** decisión documentada sobre runtime y TLS/WSS, más una prueba
+reproducible de conexión desde el teléfono. Si el navegador no puede establecer
+el canal seguro local, resolver ese bloqueo antes de avanzar con UI.
 
-### Intérprete y Proveedores
-- #### [NEW] [providers/index.ts](file:///c:/next/Jarbees/src/lib/jarbees-mobile/providers/index.ts)
-  - Interfaz `InterpreterProvider` y Factory.
-- #### [NEW] [providers/serverProvider.ts](file:///c:/next/Jarbees/src/lib/jarbees-mobile/providers/serverProvider.ts)
-  - Proveedor que consulta `/api/jarbees/interpret` (Ollama / Qwen2.5-0.5B local).
-- #### [NEW] [providers/fallbackProvider.ts](file:///c:/next/Jarbees/src/lib/jarbees-mobile/providers/fallbackProvider.ts)
-  - Proveedor offline por reglas y simulación de WebGPU.
-- #### [NEW] [qwenInterpreter.ts](file:///c:/next/Jarbees/src/lib/jarbees-mobile/qwenInterpreter.ts)
-  - Parser resiliente con extracción Regex, normalizador de JSON e integración de fallback seguro a Handoff.
+### Fase 1 — Mouse táctil
 
-### Contexto y Despacho de Comandos
-- #### [NEW] [deviceContext.ts](file:///c:/next/Jarbees/src/lib/jarbees-mobile/deviceContext.ts)
-  - Captura y simulación en tiempo real de batería, auriculares, audio, pantalla y hora.
-- #### [NEW] [commandDispatcher.ts](file:///c:/next/Jarbees/src/lib/jarbees-mobile/commandDispatcher.ts)
-  - Ejecutor de acciones (cámara, audio, linterna, vibración háptica, TTS) y enrutador de Handoff a JarBees Core.
+- Añadir una pantalla de control móvil separada del asistente actual.
+- Traducir desplazamientos relativos del dedo en deltas de cursor; incluir
+  clic izquierdo/derecho, estado de conexión, emparejamiento y desconexión.
+- Crear el Bridge mínimo para recibir, validar y ejecutar movimientos y clics.
+- Mantener el Bridge limitado a localhost/LAN y al usuario que lo inició.
 
-### Interfaz Mobile-First (Voz + Texto + Diagnóstico)
-- #### [NEW] [JarBeesMobileApp.tsx](file:///c:/next/Jarbees/src/components/jarbees-mobile/JarBeesMobileApp.tsx)
-  - App principal con los 4 estados: Disponible, Escuchando, Pensando, Ejecutando.
-- #### [NEW] [AudioOrbVisualizer.tsx](file:///c:/next/Jarbees/src/components/jarbees-mobile/AudioOrbVisualizer.tsx)
-  - Orbe interactivo central con ondas reactivas de audio y efectos luminosos de pulso.
-- #### [NEW] [DiagnosticsDrawer.tsx](file:///c:/next/Jarbees/src/components/jarbees-mobile/DiagnosticsDrawer.tsx)
-  - Panel deslizable con telemetría en vivo, selector de Provider, visor JSON y modificador de Device Context.
-- #### [NEW] [RecentActionsList.tsx](file:///c:/next/Jarbees/src/components/jarbees-mobile/RecentActionsList.tsx)
-  - Tarjetas compactas de acciones ejecutadas recientemente.
+**Aceptación:** con PWA y Bridge emparejados, mover y hacer clic en Windows de
+forma repetible; una conexión rechazada, perdida o no autenticada no genera
+acciones; se puede detener el control inmediatamente desde ambos dispositivos.
 
-### Backend Endpoint y Enrutamiento
-- #### [NEW] [api/jarbees/interpret/route.ts](file:///c:/next/Jarbees/src/app/api/jarbees/interpret/route.ts)
-  - API Route de Next.js que conecta de forma transparente con Ollama (`zarigata/Qwen2.5-0.5B-Instruct:CRAZYMODE`).
-- #### [MODIFY] [page.tsx](file:///c:/next/Jarbees/src/app/page.tsx)
-  - Renderiza `JarBeesMobileApp` como página de inicio principal.
+### Fase 2 — Teclado
 
-*(Todos los archivos existentes de products y preguntas se mantienen intactos).*
+- Añadir entrada de texto y teclas especiales necesarias (Escape, Enter,
+  Tab, modificadores y flechas).
+- Definir reglas para teclas mantenidas, repetición, foco y liberación segura
+  ante pérdida de conexión.
+- No incluir combinaciones destructivas o envío de comandos arbitrarios.
 
----
+**Aceptación:** texto y teclas permitidas llegan al equipo correcto, con
+confirmación visible de conexión y liberación segura tras desconexión.
 
-## 5. Plan de Verificación
+### Fase 3 — Empaquetado y endurecimiento
 
-1. **Prueba End-to-End en Navegador / Mobile Viewport:**
-   - Probar comando por voz con push-to-talk y tap-to-talk con VAD.
-   - Probar comando por texto vía micro-barra retráctil.
-2. **Verificación de Inferencia y Dispatcher:**
-   - Validar ejecución de acciones locales (volumen, silencio, linterna simulada, consulta de batería).
-   - Validar enrutamiento a Handoff para preguntas complejas.
-3. **Verificación de Diagnóstico:**
-   - Comprobar cambio de proveedor en tiempo real en el Drawer.
-   - Modificar contexto de dispositivo en vivo y verificar respuesta adaptada (e.g. *"Bajalo un poco"*).
-4. **Verificación de Build:**
-   - `npm run build` o `next build` para garantizar ausencia de errores de compilación o tipado.
+- Crear instalador/ejecutable de Windows firmado cuando sea posible, con
+  instrucciones de firewall y desinstalación.
+- Añadir pruebas de protocolo, autenticación, validación de rangos, límites de
+  frecuencia y desconexión.
+- Revisar certificados, logs, almacenamiento/rotación de credenciales y
+  compatibilidad de versiones.
+
+**Aceptación:** una persona puede instalar, emparejar, usar y desinstalar el
+Bridge sin configuraciones manuales peligrosas ni exposición a Internet.
+
+### Fase 4 — Orientación y Auren
+
+- Añadir modo giroscopio como opción, con calibración, sensibilidad,
+  recentrado y pausado.
+- Evaluar la reutilización del transporte y permisos para orientar/mover a
+  Auren; no bloquear el mouse básico en esa integración.
+
+### Fase posterior — Smartwatch
+
+Evaluar hardware, permisos y transporte tras validar el control por sensores en
+el teléfono. No forma parte del primer prototipo.
+
+## Limpieza y límites de alcance
+
+En esta actualización se reorientan los README y el plan, se corrigen las rutas
+PWA que apuntaban a otro repositorio y se eliminan documentos obsoletos,
+archivos de plantilla y un backup confirmado como no referenciado. Se conservan por ahora el
+asistente, el Core gateway, las rutas de productos/lector/chat y la lógica
+compartida: son código funcional, y algunos componentes podrían servir para
+Auren. Antes de retirar esas áreas hace falta confirmar que dejan de ser
+producto y verificar referencias, rutas de despliegue y consumidores.
+
+## Verificación pendiente
+
+- Instalar dependencias de forma reproducible y ejecutar `npm run build`.
+- Revisar la exportación estática y abrir la PWA desde la ruta `/JarbeesMotion/`
+  en GitHub Pages; confirmar manifest, iconos y registro del service worker.
+- Ejecutar la prueba real de WSS/entrada con Moto G(7) Plus y Windows.
+- Probar pérdida de red, reinicio del Bridge, token vencido, múltiples clientes,
+  firewall bloqueado y botón de desconexión.
+
+El build del frontend por sí solo no certifica el control remoto: esa capacidad
+solo se considera lista cuando pasan las pruebas del Bridge y del dispositivo
+real.

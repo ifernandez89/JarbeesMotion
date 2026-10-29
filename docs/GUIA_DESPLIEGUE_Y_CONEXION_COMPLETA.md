@@ -1,5 +1,11 @@
 # 📘 GUÍA DEFINITIVA: CONEXIÓN BACKEND, NEXT.JS Y DESPLIEGUE EN GITHUB PAGES (JARBEES)
 
+> **Nota de alcance:** esta guía describe el despliegue de la PWA y la
+> integración existente con JarBees Core; no configura ni autoriza el futuro
+> Windows Motion Bridge. La configuración vigente del repositorio usa
+> `/JarbeesMotion` como `basePath`; este archivo contiene ejemplos históricos y
+> no debe copiarse literalmente sobre `next.config.ts`.
+
 Este documento detalla **absolutamente todas las reglas, configuraciones y soluciones** implementadas para garantizar que la comunicación Frontend-Backend, la síntesis de audiolibros, la renderización de estilos CSS y el despliegue automático en GitHub Pages funcionen de forma impecable sin romperse jamás.
 
 ---
@@ -54,9 +60,9 @@ const isProduction = process.env.NODE_ENV === 'production';
 const nextConfig: NextConfig = {
   output: 'export',
   // Especificar basePath únicamente en producción (subcarpeta del repositorio)
-  basePath: isProduction ? '/productos_crud_frd' : '',
+  basePath: isProduction ? '/JarbeesMotion' : '',
   env: {
-    NEXT_PUBLIC_BASE_PATH: isProduction ? '/productos_crud_frd' : '',
+    NEXT_PUBLIC_BASE_PATH: isProduction ? '/JarbeesMotion' : '',
   },
   images: {
     unoptimized: true,
@@ -66,7 +72,7 @@ const nextConfig: NextConfig = {
 export default nextConfig;
 ```
 
-> ⚠️ **REGLA CRÍTICA:** **NUNCA** configurar `assetPrefix: '/productos_crud_frd'` al mismo tiempo que `basePath`. Hacerlo provoca que Next.js duplique el prefijo (`/productos_crud_frd/productos_crud_frd/_next/static/...`), lo que causa errores 404 al cargar archivos CSS/JS y rompe completamente el diseño visual.
+> ⚠️ **REGLA CRÍTICA:** **NUNCA** configurar `assetPrefix: '/JarbeesMotion'` al mismo tiempo que `basePath`. Hacerlo provoca que Next.js duplique el prefijo (`/JarbeesMotion/JarbeesMotion/_next/static/...`), lo que causa errores 404 al cargar archivos CSS/JS y rompe completamente el diseño visual.
 
 ---
 
@@ -85,7 +91,7 @@ Por defecto, GitHub Pages pasa los archivos exportados por la herramienta **Jeky
 
 ## 5. 🔀 PREVENCIÓN DE ERRORES 404 EN RUTAS DINO-SPA (`404.html`)
 
-GitHub Pages es un servidor de archivos estáticos. Si un usuario recarga directamente `https://ifernandez89.github.io/productos_crud_frd/preguntas/new` o `/reader`, GitHub Pages devuelve error `404 File Not Found`.
+GitHub Pages es un servidor de archivos estáticos. Si un usuario recarga directamente `https://ifernandez89.github.io/JarbeesMotion/preguntas/new` o `/reader`, GitHub Pages devuelve error `404 File Not Found`.
 
 ### Solución Obligatoria:
 En la carpeta de salida (`out/`), duplicar `index.html` como `404.html`:

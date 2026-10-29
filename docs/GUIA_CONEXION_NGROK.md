@@ -1,5 +1,11 @@
 # 🌐 Guía de Conexión Frontend <-> Backend de Casa mediante Ngrok y GitHub Pages
 
+> **Nota de alcance:** esta guía se refiere únicamente a la integración remota
+> existente con JarBees Core. No es el transporte del Windows Motion Bridge;
+> no expongas el Bridge mediante Ngrok. Las rutas dinámicas de Core se configuran
+> por `NEXT_PUBLIC_BACKEND_URL`, no mediante una URL Ngrok guardada en el
+> navegador.
+
 Esta guía documenta la arquitectura de conexión del frontend con el backend alojado localmente ("en casa"), el uso de **ngrok**, las variables de entorno requeridas y las **reglas críticas de código** para evitar que futuras actualizaciones rompan la conexión del Chatbot, el Lector de Audiolibros o cualquier otro servicio.
 
 ---
@@ -43,13 +49,13 @@ NEXT_PUBLIC_API_TOKEN=tu_token_secreto_aqui
 ```
 
 > ⚠️ **IMPORTANTE CON NGROK GRATUITO**:
-> Si reiniciás ngrok en casa y cambia la URL (ej. de `abc.ngrok-free.app` a `xyz.ngrok-free.app`), debés actualizar `NEXT_PUBLIC_BACKEND_URL` en tu despliegue de GitHub/Vercel **o** cambiar la URL directamente desde la interfaz del Lector (`/reader`), la cual guarda la nueva URL en `localStorage` (`jarbees_backend_url`).
+> Si reiniciás ngrok en casa y cambia la URL (ej. de `abc.ngrok-free.app` a `xyz.ngrok-free.app`), debés actualizar `NEXT_PUBLIC_BACKEND_URL` en tu despliegue de GitHub/Vercel y volver a compilar, o cambiar la URL desde `/reader`, que actualmente permite guardarla en `localStorage`. Esa configuración aplica al backend de JarBees Core; no empareja ni configura el futuro Motion Bridge.
 
 ---
 
 ## 🔒 3. Reglas de Código Obligatorias (¡NO MODIFICAR NI ROMPER!)
 
-La resolución central de la URL del backend se administra en [`src/app/services/jarbees.api.ts`](file:///c:/next/productos_crud_frd/src/app/services/jarbees.api.ts) mediante la función `getBaseUrl()`.
+La resolución actual de la URL del backend se administra en [`jarbees.api.ts`](../src/app/services/jarbees.api.ts) mediante `NEXT_PUBLIC_BACKEND_URL` y un fallback local a `http://localhost:4000`.
 
 ### 🚨 Regla de Oro para Desarrolladores / IAs:
 **NUNCA** sustituir `NEXT_PUBLIC_BACKEND_URL` concatenando el puerto `:4000` a `window.location.hostname`.

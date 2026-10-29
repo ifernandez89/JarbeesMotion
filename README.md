@@ -1,85 +1,65 @@
-# 🐝 JarBees Mobile — Edge AI Command Interpreter
+# JarBees Motion
 
-**JarBees Mobile** es una aplicación asistente mobile-first y controlador inteligente del dispositivo en el borde (*Edge Computing*), impulsada por un modelo de lenguaje ultraligero local (**Qwen2.5-0.5B-Instruct** en formato GGUF mediante `llama.cpp`).
+JarBees Motion is a mobile-first PWA project intended to grow into a local-network
+remote control for Windows: the phone will provide a touchpad and virtual
+keyboard, and a separately installed Windows bridge will translate authenticated
+commands into mouse and keyboard input.
 
-Su objetivo fundamental no es ser un chatbot genérico, sino actuar como un **intérprete determinista de intenciones y controlador del teléfono**: traduce comandos de voz y texto en lenguaje natural + contexto del dispositivo en acciones estructuradas y seguras.
+## Current status
 
----
+**The remote mouse/keyboard feature is not implemented yet.** The current home
+screen is the JarBees Mobile assistant. This repository has PWA and mobile UI
+foundations, an assistant command dispatcher, and an HTTP integration for
+JarBees Core; it does not yet contain a WebSocket control protocol, trackpad
+interface, Windows receiver, pairing flow, or Windows input injection.
 
-## 📌 Origen y Alcance del Proyecto
+The existing Core gateway is an HTTP assistant integration, not the Motion
+Bridge. It should not be exposed to the local network as a control receiver.
 
-- **Repositorio Independiente**: Este proyecto se separó y derivó del frontend original (`products crud frd`) para albergar funcionalidades experimentales de asistente móvil y procesamiento en el borde.
-- **Preservación de Vistas Legadas**: Todas las interfaces y módulos originales (`/products`, `/preguntas/new`, `/reader`) se mantienen intactos en la base de código y continúan disponibles para futuras integraciones.
+## Target architecture
 
----
-
-## 🏗️ Arquitectura Híbrida en 2 Etapas
-
-```mermaid
-flowchart LR
-    subgraph Etapa 1: GitHub Pages / Web
-        A[Desarrollo Rápido UI] --> B[Test de Intenciones Qwen]
-        B --> C[Voz + Texto + VAD]
-        C --> D[Cálculos + Timers + Mock Device]
-    end
-
-    subgraph Etapa 2: Android APK (Moto G5 Plus)
-        D --> E[Empaquetar llama.cpp + GGUF]
-        E --> F[Conectar Android Native Bridge]
-        F --> G[Control Real de Hardware Android]
-    end
+```text
+Moto G(7) Plus PWA
+  ├─ touchpad and virtual keyboard
+  ├─ pairing and connection controls
+  └─ authenticated WebSocket over the local network
+                  │
+                  ▼
+JarBees Motion Bridge for Windows
+  ├─ validates pairing, origin, and bounded command messages
+  ├─ exposes an immediate disconnect/stop control
+  └─ generates Windows input through a supported native API
 ```
 
-1. **Etapa 1 — Web / PWA (GitHub Pages como Laboratorio de Lógica & UX)**:
-   - Permite iterar velozmente la interfaz, flujo conversacional, reconocimiento de voz (STT), micro-barra de texto, temporizadores en pantalla y cálculos deterministas sin requerir empaquetar APKs en cada cambio.
-2. **Etapa 2 — Android APK (Laboratorio de Integración de Hardware)**:
-   - Empaqueta `llama.cpp` + `qwen2.5-0.5b.gguf` para inferencia 100% offline en el chip del teléfono, controlando volumen nativo (`AudioManager`), música global (`MediaSessionManager`), cámara nativa y alarmas del reloj del sistema.
+The phone and PC need a network path between them; being on the same Wi-Fi
+network alone does not guarantee that the router allows peer-to-peer traffic.
+Windows Firewall, access-point client isolation, browser local-network
+permissions, and HTTPS-to-WSS requirements must be tested on the target phone.
 
----
+## Development
 
-## 🎯 16 Capacidades de la Versión 1 (V1)
+Prerequisites: Node.js 20 or Bun, plus the package manager lockfile you choose
+for this checkout.
 
-1. **🧠 Intent Engine**: Qwen 0.5B recibe lenguaje natural y genera JSON estructurado (`domain`, `action`, `parameters`).
-2. **🎤 Entrada por Voz (STT)**: Botón `[ HABLAR ]` con detección de actividad de voz (VAD de silencio ~1.4s).
-3. **⌨️ Entrada por Texto**: Barra retráctil `[ ESCRIBIR UN COMANDO ]` para depuración sin micrófono.
-4. **📱 Apertura de Aplicaciones**: `OPEN_CAMERA`, `OPEN_CALCULATOR`, `OPEN_BROWSER`, `OPEN_SETTINGS`.
-5. **🔊 Control de Audio & Multimedia**: `VOLUME_UP`, `VOLUME_DOWN`, `SET_VOLUME`, `MUTE`, `MEDIA_PLAY`, `MEDIA_PAUSE`, `MEDIA_NEXT`, `MEDIA_PREVIOUS`.
-6. **🔋 Consultas de Contexto del Teléfono**: Batería, estado de carga, auriculares conectados, música activa y hora.
-7. **📊 Resumen de Estado del Dispositivo**: *"JarBees, ¿cómo está mi teléfono?"* genera una tarjeta visual completa de estado.
-8. **🧮 Cálculos Matemáticos Deterministas**: Resuelve operaciones aritméticas y descuentos porcentuales (e.g. *"Calculá cuánto me queda si descuento 21% de 1837"* → `1451.23`).
-9. **⏱️ Temporizadores en Tiempo Real**: Creación, cuenta regresiva activa en widget y cancelación de temporizadores.
-10. **📋 Capability Discovery**: *"¿Qué podés hacer?"* y *"¿Qué puedo hacer sin Internet?"* detallan funciones locales vs Core.
-11. **📶 Consulta de Conectividad**: WiFi, Bluetooth y estado de conexión a Internet.
-12. **📍 Ubicación GPS**: Coordenadas de latitud y longitud actuales.
-13. **📷 Cámara**: Lanzador y visor interactivo de cámara.
-14. **🌐 Búsqueda en Navegador**: *"Buscá perros en Internet"* abre el navegador con la búsqueda construida.
-15. **🔐 Sistema de Confirmaciones**: Distinción entre acciones automáticas seguras y acciones que requieren confirmación.
-16. **🛠️ Developer Mode & Diagnostics**: Selector de proveedores (`ServerApiProvider`, `WebGpuLocalProvider`, `RuleFallbackProvider`), telemetría de latencia `ms`, visor de JSON formateado y simulador de contexto en vivo.
-
----
-
-## 🚀 Puesta en Marcha Local
-
-### Prerrequisitos
-- [Bun](https://bun.sh/) o [Node.js](https://nodejs.org/) (v18+)
-- [Ollama](https://ollama.com/) con el modelo `zarigata/Qwen2.5-0.5B-Instruct:CRAZYMODE` (opcional si se usa el motor Fallback/Offline).
-
-### Instalación y Ejecución
 ```bash
-# 1. Instalar dependencias
-bun install
-
-# 2. Iniciar servidor de desarrollo
-bun run dev
-
-# 3. Ejecutar suite de pruebas
-bun scripts/verify-jarbees-core.js
-
-# 4. Compilar producción
-bun run build
+npm ci --legacy-peer-deps
+npm run dev
+npm run build
 ```
 
----
+The current Next.js configuration uses static export for GitHub Pages. A static
+PWA can be hosted remotely, but the Windows bridge must run separately on the PC.
+The deployment workflow and HTTPS/WSS connection model are part of the readiness
+work described in [the Motion Bridge plan](./docs/implementation_plan.md).
 
-## 📄 Licencia y Créditos
-Desarrollado para el ecosistema **JarBees**. Consulta el archivo [CHANGELOG.md](./CHANGELOG.md) para el historial completo de cambios y especificaciones técnicas.
+## Project direction and cleanup
+
+The assistant, existing Core integration, product routes, and shared PWA
+infrastructure remain in place for now. Some may support the planned Auren and
+device-control experience. Do not delete these modules solely because they are
+not part of the first mouse prototype; retire them only after their callers,
+deployment use, and product scope have been verified.
+
+See [PWA status and limitations](./PWA_JARBEES.md) for what the current PWA does
+and [the implementation plan](./docs/implementation_plan.md) for readiness,
+security requirements, milestones, and acceptance criteria.
